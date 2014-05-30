@@ -1,11 +1,13 @@
 \chapter{Conclusion}
 \label{chap:conclusion}
 We designed and built a portable probabilistic programming framework which can:
+\begin{enumerate}
+  \item Describe Bayesian networks. 
+  \item Automatically infer conditional probability.
+  \item Embedded into every common programming language to address the cross-platform problem
+\end{enumerate}
+Different from all the other probabilistic programming languages or systems as discussed in Chapter ~\ref{chap:related}, the design of our framework didn't extend any domain programming language, but allow users to user in many programming languages, which is portable. We have designed the syntax of the portable probabilistic programming language which can declare Bayesian networks models and query condition probability in domain language. Our framework allow users to develop in cross-platform as we offered APIs for each common used programming language. In this way, developers don't need to get the hang of several different probabilistic programming languages which are extended from different domain languges. They can use one language to declare their Bayesian networks while query the models in desired domain developing language.
 
-(1). Describe Bayesian networks. 
+The goal of probabilistic programming is to help the large number of programmers who have domain expertise, but lack of expertise in machine learning. It allows programmers to put more emphasis on the design of a model rather than spend lots of time implmenting the graphical models and inference tasks. In Probabilistic programming, modeling and inference have been disentangled. The research in probabilistic programming lies in the intersection of artificial intelligence, stochastics and programming language. The chanllenges of this framework lies in the design of the portable probabilistic programming language and the implementation of the inference engine, which can automatically do inference.
 
-(2). Automatically infer conditional probability.
-
-(3). Embedded into every common programming language to address the cross-platform problem
-
-The main directions for improvement are better mixing and faster inference. In the future, we will work on parallel processing of multiple chains and try to devise and implement more efficient and robust inference engine.
+The main directions for improvement are better mixing and faster inference. ~\cite{goodman}. The options of inference algorithms can be enlarged to target more generative models. What's more, for difference models, idealy the inference engines can choose the most suitable and efficient inference method thus to enhance the performance of inference engine. ~\cite{amortized} argued that the brain operates in the setting of amortized inference, where numerous related queries must be answered. Thus they proposed a form of ﬂexible reuse, according to which shared inferences are cached and composed together to answer new queries. There is also a way to work on parallel processing of multiple chains and try to devise thus to implement more efficient and robust inference engine.

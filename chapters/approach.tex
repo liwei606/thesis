@@ -27,7 +27,7 @@ The flip\_example describes a probabilistic model that has the distribution over
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.9\textwidth]{figures/flip_dist.png}
+    \includegraphics[width=0.8\textwidth]{figures/flip_dist.png}
     \caption{Flip example, the implied distributions over variables.}
     \label{fig:flip_dist}
 \end{figure}
@@ -94,6 +94,7 @@ The grammar for the portable probabilistic programming language is as below:
     integer\_value \rightarrow & ~[0-9]+ \\            
              name \rightarrow & ~[a-zA-Z\_][0-9a-zA-Z\_]*
 \end{align*}
+In our design, the declarations of the Bayesian networks and the query of conditional probabilisty is seperated. Users can describe the model in a model file and load the model in their domain languages. In this way, users can reuse their models and load several probabilistic graphical models at the same time. Also their queries can based on these models which have a better struture than mixed the models up. Examples of writing the queries and load models can be found in ~\ref{sec:api}.
 
 \section{Probabilistic Distribution Library}
 \label{sec:distr}
@@ -109,11 +110,36 @@ We implemented the probabilistic library for most of the probabilistic distribut
 
 Most of the distributions in our library are implemented based on Normal distribution and Bernoulli distribution according to the mathematical methods. The probabilistic distributions in our library contain Bernoulli distribution, Normal distribution, Gamma distribution, Binomial distribution, Multinomial distribution, Dirichlet distribution, Beta distribution, Uniform distribution, and Poisson distribution.
 
+Below is an example to show how we derive the samples of Gaussian distribution from randomC distribution which generate random values in $[0, 1]$:
+
+\begin{lstlisting}[language=C]
+  float gaussian(float mu, float sigma)
+  {
+      float u, v, x, y, q;
+      do {
+          u = 1 - randomC();
+          v = 1.7156 * (randomC() - 0.5);
+          x = u - 0.449871;
+          y = fabs(v) + 0.386595;
+          q = x * x + y * (0.196 * y - 0.25472 * x);
+      } while (q >= 0.27597 && (q > 0.27846 || v * v > -4 * u * u * log(u)));
+      return mu + sigma * v / u;
+  }
+\end{lstlisting}
+
 \section{Inference Engine}
 \label{sec:infer}
 Calculating the distribution specified by a probabilistic program is called probabilistic inference. The inferred probability distribution is called the \textit{posterior probability distribution}, and the initial guess made by the program is called the \textit{prior probability distribution}. There are a number of methods for performing inference. The most common exact inference methods are: variable elimination, which eliminates (by integration or summation) the non-observed non-query variables one by one by distributing the sum over the product; clique tree propagation, which caches the computation so that many variables can be queried at one time and new evidence can be propagated quickly; and recursive conditioning and AND/OR search, which allow for a space-time tradeoff and match the efficiency of variable elimination when enough space is used. All of these methods have complexity that is exponential in the network's treewidth. The most common approximate inference algorithms are importance sampling, stochastic MCMC simulation ~\cite{mcmc}, mini-bucket elimination, loopy belief propagation, generalized belief propagation, and variational methods.
 
 The mechanism of our inference engine is based on sampling. Currently we used Rejection Sampling algorithm in the inference engine, which is straightforward and easy to implement. However, rejection Sampling is not as efficient as other sampling algorithms like Gibbs Sampling and Metropolis-Hastings algorithm. Henceforth, we added another optional inference algorithm in our inference engine: Metropolis-Hastings algorithm. 
+
+There are tree problems we need to consider in stochastic sampling:
+\begin{itemize}
+  \item how to generate samples
+  \item how to incorporate observations
+  \item how to infer probabilities from samples
+\end{itemize}
+The intuitive idea is to sample the traces as the program runs. If the trace meets the Boolean requirements of the condition, then record the trace, or the trace is discarded. Then we calculate the number of the traces that can meet the Boolean requirement of the probability we want to get. Then calculating this number over the whole number of traces we recorded can derive the final conditional probability.
 
 \subsection{Rejection Sampling}
 \textit{Rejection sampling} is a basic technique used to generate observations from a distribution. It is a type of Monte Carlo method. The method works for any distribution in $\mathbb{R}^m$ with a density.
@@ -157,7 +183,6 @@ Continue with our previous e
     \label{fig:mh2}
 \end{figure}
 
-
 The \textit{Metropolis-Hastings (MH) algorithm} is the most popular MCMC method. An MH step of invariant distribution $p(x)$ and proposal distribution $q(x^*	| x)$ involves sampling a candidate value $x^*$ given the current value $x$ according to $q(x^* | x)$. The Markov chain then moves towards $x^*$ with acceptance probability
 \begin{align*}
   A(x, x^*) = min\{1,[p(x)q(x^* | x)]^{−1} p(x^*)q(x | x^*)\}
@@ -199,24 +224,8 @@ The Metropolis algorithm assumes a symmetric random walk proposal $q(x^* | x^{(i
   \mathscr{A}(x^{(i)}, x^*) = min \{ 1, \frac{p(x^*)}{p(x^{(i)})} \}
 \end{align*}
 
-\begin{figure}
-    \centering
-    \includegraphics[width=0.7\textwidth]{figures/trace1.png}
-    \caption{An MCMC trace sampler.}
-    \label{fig:trace1}
-\end{figure}
-
-\begin{figure}
-    \centering
-    \includegraphics[width=0.7\textwidth]{figures/trace2.png}
-    \caption{Algorithm for trace\_update}
-    \label{fig:trace2}
-\end{figure}
-
-In the implementation of the MH alorithm in our inference engine, we leverage the approach proposed by ~\cite{lightweight}, which memorized trace information and update trace iteratively as illustrated in Figure ~\ref{fig:trace1} and Figure ~\ref{fig:trace2}. 
-
-\subsection{Caculating the probability}
-The intuitive idea is to sample the traces as the program runs. If the trace meets the Boolean requirements of the condition, then record the trace, or the trace is discarded. Then we calculate the number of the traces that can meet the Boolean requirement of the probability we want to get. Then calculating this number over the whole number of traces we recorded can derive the final conditional probability.
+\subsection{From Samples to Probabilities}
+We can get traces of samples after the sampling algorithm. Probabilities can be estimated from a set of examples using the sample average. The sample average of a proposition $\alpha$ is the number of samples where $\alpha$ is true divided by the total number of samples. The sample average approaches the true probability as the number of samples approaches infinity by the law of large numbers.
 
 \section{APIs for Other Languages}
 \label{sec:api}
@@ -226,9 +235,142 @@ We leverage the development tool SWIG (Simplified Wrapper and Interface Generato
   
   We will give some examples of how our framework can be used in other common language like \textbf{C, Python, Java}.
   
-\subsection{C}
+\subsection{C API}
+To encode the previous flip example in C, the APIs is showed as following:
+\begin{lstlisting}[language=C]
+#include <stdio.h>
+#include "ppp.h"
+#include <stdlib.h>
+#include <time.h>
 
-\subsection{Python}
+int main()
+  {
+      /* use pointers to structs because the client doesn't need to know the struct sizes */
+      struct pp_state_t* state;
+      struct pp_instance_t* instance;
+      struct pp_query_t* query;
+      struct pp_trace_store_t* traces;
+      float result;
 
-\subsection{Java}
+      srand(time(NULL));
+      state = pp_new_state();
+      printf("> state created\n");
 
+      pp_load_file(state, "parse/models/flip.model");
+      printf("> file loaded\n");
+
+      instance = pp_new_instance(state, "flip_example", 0);
+      printf("> instance created\n");
+
+      query = pp_compile_query(instance, "x>2, x<3");
+      printf("> condition compiled\n");
+
+      traces = pp_sample(instance, query);
+      printf("> traces sampled\n");
+
+      query = pp_compile_query(instance, "flip==1");
+      printf("> query compiled\n");
+
+      pp_get_result(traces, query, &result);  /* "get_result" may not be a good name */
+      printf("%f\n", result);
+
+      pp_infer(instance, "flip == 1", "x > 2, x < 3", &result);  /* alternative way to get a result */
+      printf("%f\n", result);
+
+      pp_free(state);  /* free memory, associated models, instances, queries, and trace stores are deallocated */
+
+      return 0;
+  }
+\end{lstlisting}
+  
+\subsection{Python API}
+If we want to encode the flip example in the same way in Python, we need to add an interface file which is the input to SWIG. The $swig$ command produces a file ``example\_wrap.c" that should be compiled and linked with the rest of the program. In this case, we have built a dynamically loadable extension that can be loaded into the Python interpreter using the `load' command. The interface file is like below:
+\begin{lstlisting}[language=C]
+  /* libppp.i */
+  %module libppp
+  %include "typemaps.i"
+  %apply float *OUTPUT { float * result };
+  %{
+  /* Put header files here or function declarations like below */
+  #include "libppp.h"
+  %}
+
+  %include "libppp.h"
+\end{lstlisting}
+where ``libppp.h'' is the original c header file.
+And the APIs are showed below:
+\begin{lstlisting}[language=Python]
+import libppp
+
+state = libppp.pp_new_state()
+print("> state created\n")
+
+libppp.pp_load_file(state, "../parse/models/flip.model")
+print("> file loaded\n")
+
+instance = libppp.pp_new_instance(state, "flip_example", None)
+print("> instance created\n")
+
+query = libppp.pp_compile_query(instance, "x>2, x<3")
+print("> condition compiled\n")
+
+traces = libppp.pp_sample(instance, query)
+print("> traces sampled\n")
+
+query = libppp.pp_compile_query(instance, "flip==1")
+print("> query compiled\n")
+
+success, result = libppp.pp_get_result(traces, query)
+print("success:", success, "result:", result)
+
+success, result = libppp.pp_infer(instance, "flip == 1", "x > 2, x < 3")
+print("success:", success, "result:", result)
+
+libppp.pp_free(state); 
+\end{lstlisting}
+
+\subsection{Java API}
+Similarly, a Java version for the flip example is as following:
+\begin{lstlisting}[language=Java]
+public class Flip {
+
+    public static void main(String[] args) {
+        System.setProperty("java.library.path", ".");
+        System.loadLibrary("libppp");
+        SWIGTYPE_p_pp_state_t state = libppp.pp_new_state();
+        SWIGTYPE_p_pp_instance_t instance;
+        SWIGTYPE_p_pp_query_t query;
+        SWIGTYPE_p_pp_trace_store_t traces;
+        int success;
+        float[] result = new float[2];
+        SWIGTYPE_p_float empty;
+
+        System.out.print("> state created\n");
+
+        libppp.pp_load_file(state, "../parse/models/flip.model");
+        System.out.print("> file loaded\n");
+
+        instance = libppp.pp_new_instance(state, "flip_example", null);
+        System.out.print("> instance created\n");
+
+        query = libppp.pp_compile_query(instance, "x>2, x<3");
+        System.out.print("> condition compiled\n");
+
+        traces = libppp.pp_sample(instance, query);
+        System.out.print("> traces sampled\n");
+
+        query = libppp.pp_compile_query(instance, "flip==1");
+        System.out.print("> query compiled\n");
+
+        success = libppp.pp_get_result(traces, query, result);
+        System.out.printf("result: d%", result);
+
+        success = libppp.pp_infer(instance, "flip == 1", "x > 2, x < 3", result);
+        System.out.printf("result: d%", result);
+
+        libppp.pp_free(state);
+    }
+}
+\end{lstlisting}
+
+For other languages, the APIs are similar.
