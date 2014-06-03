@@ -94,6 +94,32 @@ The grammar for the portable probabilistic programming language is as below:
     integer\_value \rightarrow & ~[0-9]+ \\            
              name \rightarrow & ~[a-zA-Z\_][0-9a-zA-Z\_]*
 \end{align*}
+The example of declaring an Hidden Markov Model(HMM) with our portable probabilistic programming language is as below:
+
+\noindent\begin{minipage}{\textwidth}
+\begin{lstlisting}[language=C]
+  model hidden_markov_model(n, a, b) {
+      // n -- chain length
+      // a -- number of possible states
+      // b -- number of possible observations
+      public states[n]   // hidden states
+      public observ[n]   // observations
+      public trans[a,a]  // transition matrix of size a*a
+      public emiss[a,b]  // emission matrix of size a*b
+      public start[a]    // start probabilities of size a
+ 
+      states[0] ~ dcat(start)
+      for i = 1 to n-1 {
+          states[i] ~ dcat(trans[states[i-1]])
+      }
+ 
+      for i = 0 to n-1 {
+          observ[i] ~ dcat(emiss[states[i]])
+      }
+  }
+\end{lstlisting}
+\end{minipage}
+
 In our design, the declarations of the Bayesian networks and the query of conditional probabilisty is seperated. Users can describe the model in a model file and load the model in their domain languages. In this way, users can reuse their models and load several probabilistic graphical models at the same time. Also their queries can based on these models which have a better struture than mixed the models up. Examples of writing the queries and load models can be found in ~\ref{sec:api}.
 
 \section{Probabilistic Distribution Library}
@@ -107,25 +133,47 @@ We implemented the probabilistic library for most of the probabilistic distribut
     \label{fig:gmm}
 \end{figure}
 
+Most of the distributions in our library are implemented based on Normal distribution and Bernoulli distribution according to the mathematical methods. The probabilistic distributions in our framework contain:
 
-Most of the distributions in our library are implemented based on Normal distribution and Bernoulli distribution according to the mathematical methods. The probabilistic distributions in our library contain Bernoulli distribution, Normal distribution, Gamma distribution, Binomial distribution, Multinomial distribution, Dirichlet distribution, Beta distribution, Uniform distribution, and Poisson distribution.
+\begin{center}
+\begin{tabular}{|l|l|}
+  \hline
+  Code & Distribution \\
+  \hline
+  dbern & Bernoulli distribution \\
+  dnorm & Normal distribution \\
+  dgamma & Gamma distribution \\ 
+  dbinomial & Binomial distribution \\
+  dmultinomial & Multinomial distribution \\
+  ddirich & Dirichlet distribution\\
+  dbeta & Beta distribution \\
+  duniform & Uniform distribution \\
+  duniform\_discrete & Discrete uniform distribution \\
+  dpoisson & Poisson distribution \\
+  dcat & Categorical distribution \\
+  \hline
+\end{tabular}
+\end{center}
 
-Below is an example to show how we derive the samples of Gaussian distribution from randomC distribution which generate random values in $[0, 1]$:
+There are many algorithms to generate values from some specific probabilistic distribution. For example, to generate values from Gaussian distribution, there is Box-Muller transform method ~\cite{box} and Ziggurat algorithm ~\cite{ziggurat}. We leveraged Ziggurat algorithm in our framework since it is faster and still exact. 
 
-\begin{lstlisting}[language=C]
-  float gaussian(float mu, float sigma)
-  {
-      float u, v, x, y, q;
-      do {
-          u = 1 - randomC();
-          v = 1.7156 * (randomC() - 0.5);
-          x = u - 0.449871;
-          y = fabs(v) + 0.386595;
-          q = x * x + y * (0.196 * y - 0.25472 * x);
-      } while (q >= 0.27597 && (q > 0.27846 || v * v > -4 * u * u * log(u)));
-      return mu + sigma * v / u;
-  }
-\end{lstlisting}
+\begin{figure}
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/ziggurat.png}
+    \caption{The ziggurat method with 7 rectangles.}
+    \label{fig:ziggurat}
+\end{figure}
+
+As is showed in Figure ~\ref{fig:ziggurat}, each rectangular is a layer. Given uniform random variables $U_0,~U_1 \in [0,1)$, the ziggurat algorithm can be described as:
+\begin{enumerate}
+  \item Choose a random layer $0 \leq i < n$.
+  \item Let $x = U_0 \times x_i$
+  \item If $x < x_i + 1$, return $x$.
+  \item If $i == 0$, generate a point from the tail using the fallback algorithm.
+  \item Let $y = y_i + U_1 \times (y_i + 1 − y_i)$.
+  \item Compute $f(x)$. If $y < f(x)$, return $x$.
+  \item Otherwise, choose new random numbers and go back to step 1.
+\end{enumerate}
 
 \section{Inference Engine}
 \label{sec:infer}
@@ -227,13 +275,57 @@ The Metropolis algorithm assumes a symmetric random walk proposal $q(x^* | x^{(i
 \subsection{From Samples to Probabilities}
 We can get traces of samples after the sampling algorithm. Probabilities can be estimated from a set of examples using the sample average. The sample average of a proposition $\alpha$ is the number of samples where $\alpha$ is true divided by the total number of samples. The sample average approaches the true probability as the number of samples approaches infinity by the law of large numbers.
 
+We treat the condtion and the desired posterior as booleans. We will take a very simple query as example to illustrate how to calculate probability after sampling. Given a query
+\begin{align*}
+  P (X = 1| Y < 2)
+\end{align*}
+we will get traces of samples where the samples all meet the condition $Y < 2$. The number of such samples generated is $n$. There are some other samples generated in the sampling process that can not meet the boolean requirement, which we will not count them in $n$. Then from these left $n$ samples, we may find $t$ samples that also meet the boolean requirement of $X = 1$. Thus the desired conditional probability would be $t / n$.
+
 \section{APIs for Other Languages}
 \label{sec:api}
-We leverage the development tool SWIG (Simplified Wrapper and Interface Generator) ~\cite{swig} to make other languages be able to call for C functions, as we implemented in C. Once the user has the APIs, he/she is able to call the load probabilistic model function and inference function in each common language. That's how the portable is implemented. 
+We leverage the development tool SWIG (Simplified Wrapper and Interface Generator) ~\cite{swig} to make other languages be able to call for C functions, as we implemented in C. SWIG is an interface compiler that connects programs written in C and C++ with scripting languages such as Perl, Python, Ruby, and Tcl. It works by taking the declarations found in C/C++ header files and using them to generate the wrapper code that scripting languages need to access the underlying C/C++ code. Once the user has the APIs, users are able to call the load probabilistic model function and inference function in each common language. That's how the portable is implemented. 
 
-	The challenge in this part is the C/C++ pointer doesn’t exist in other languages like Java and Python. We cope with this problem by using wrapper with a specific form to hint the difference of the pointers and the normal variables.
+The supported languages is listed as below:
+
+\begin{center}
+\begin{tabular}{|l|l|l|}
+\hline
+Tcl & Python & Perl \\
+\hline
+Guile & Java & Ruby \\
+\hline
+Mzscheme & PHP & OCaml \\
+\hline
+C\# & Pike & Chincken Scheme \\
+\hline
+Allegro CL & Modula-3 & Lua \\
+\hline
+Lisp & R & Octave \\
+\hline
+Go & D & Javascript \\
+\hline
+\end{tabular}
+\end{center}
+
+No matter what domain languages we choose to use, the language to describe the probabilistic graphical model is the same, whose concrete syntax is showed in programming language syntax section, in Section ~\ref{sec:syntax}. Below is an example to declare the flip model in our declaration language:
+
+\begin{lstlisting}[language=C]
+  model flip_example() {
+      public flip
+      public x
+      private x1
+      private x2
+
+      flip ~ dbern(0.5)
+      x1 ~ dnorm(0, 1)
+      x2 ~ dgamma(1, 1)
+      x = if flip then x1 else x2 + 2
+  }
+\end{lstlisting}
+
+The challenge in this part is the C/C++ pointer doesn’t exist in other languages like Java and Python. We cope with this problem by using wrapper with a specific form to hint the difference of the pointers and the normal variables.
   
-  We will give some examples of how our framework can be used in other common language like \textbf{C, Python, Java}.
+We will give some examples of how our framework can be used in other common language like \textbf{C, Python, Java}.
   
 \subsection{C API}
 To encode the previous flip example in C, the APIs is showed as following:
@@ -284,7 +376,9 @@ int main()
 \end{lstlisting}
   
 \subsection{Python API}
-If we want to encode the flip example in the same way in Python, we need to add an interface file which is the input to SWIG. The $swig$ command produces a file ``example\_wrap.c" that should be compiled and linked with the rest of the program. In this case, we have built a dynamically loadable extension that can be loaded into the Python interpreter using the `load' command. The interface file is like below:
+If we want to encode the flip example in the same way in Python, we need to add an interface file which is the input to SWIG. The $swig$ command produces a file ``example\_wrap.c" that should be compiled and linked with the rest of the program. In this case, we have built a dynamically loadable extension that can be loaded into the Python interpreter using the `load' command. The interface file is showed in Figure ~\ref{fig:ifile}.
+
+\begin{figure}[h]
 \begin{lstlisting}[language=C]
   /* libppp.i */
   %module libppp
@@ -297,28 +391,52 @@ If we want to encode the flip example in the same way in Python, we need to add 
 
   %include "libppp.h"
 \end{lstlisting}
-where ``libppp.h'' is the original c header file.
-And the APIs are showed below:
+\caption{Interface file}
+\label{fig:ifile}
+\end{figure}
+where ``\texttt{libppp.h}'' is the original c header file containing the public APIs for user to load the model and make quiries, which is showed in Figure ~\ref{fig:libppp}.
+
+\begin{figure}[h]
+\begin{lstlisting}[language=C]
+  struct pp_state_t;
+  struct pp_instance_t;
+  struct pp_query_t;
+  struct pp_trace_store_t;
+ 
+  struct pp_state_t* pp_new_state();
+  int pp_free(struct pp_state_t* state);
+ 
+  int pp_load_file(struct pp_state_t* state, const char* filename);
+  struct pp_instance_t* pp_new_instance(struct pp_state_t* state, const char* model_name, int* model_params);
+ 
+  struct pp_query_t* pp_compile_query(struct pp_instance_t* instance, const char* query_string);
+  struct pp_trace_store_t* pp_sample(struct pp_instance_t* instance, struct pp_query_t* query);
+  int pp_get_result(struct pp_trace_store_t* traces, struct pp_query_t* query, float* result);
+ 
+  // P(X|Y)
+  int pp_infer(struct pp_instance_t* instance, const char* X, const char* Y, float* result);
+\end{lstlisting}
+\caption{Header file of public APIs}
+\label{fig:libppp}
+\end{figure}
+
+And the API usage in Python in showed in Figure ~\ref{fig:python}.
+
+\begin{figure}
 \begin{lstlisting}[language=Python]
 import libppp
 
 state = libppp.pp_new_state()
-print("> state created\n")
 
 libppp.pp_load_file(state, "../parse/models/flip.model")
-print("> file loaded\n")
 
 instance = libppp.pp_new_instance(state, "flip_example", None)
-print("> instance created\n")
 
 query = libppp.pp_compile_query(instance, "x>2, x<3")
-print("> condition compiled\n")
 
 traces = libppp.pp_sample(instance, query)
-print("> traces sampled\n")
 
 query = libppp.pp_compile_query(instance, "flip==1")
-print("> query compiled\n")
 
 success, result = libppp.pp_get_result(traces, query)
 print("success:", success, "result:", result)
@@ -328,9 +446,12 @@ print("success:", success, "result:", result)
 
 libppp.pp_free(state); 
 \end{lstlisting}
+\caption{Python API usage example}
+\label{fig:python}
+\end{figure}
 
 \subsection{Java API}
-Similarly, a Java version for the flip example is as following:
+\begin{figure}
 \begin{lstlisting}[language=Java]
 public class Flip {
 
@@ -343,24 +464,16 @@ public class Flip {
         SWIGTYPE_p_pp_trace_store_t traces;
         int success;
         float[] result = new float[2];
-        SWIGTYPE_p_float empty;
-
-        System.out.print("> state created\n");
 
         libppp.pp_load_file(state, "../parse/models/flip.model");
-        System.out.print("> file loaded\n");
 
         instance = libppp.pp_new_instance(state, "flip_example", null);
-        System.out.print("> instance created\n");
 
         query = libppp.pp_compile_query(instance, "x>2, x<3");
-        System.out.print("> condition compiled\n");
 
         traces = libppp.pp_sample(instance, query);
-        System.out.print("> traces sampled\n");
 
         query = libppp.pp_compile_query(instance, "flip==1");
-        System.out.print("> query compiled\n");
 
         success = libppp.pp_get_result(traces, query, result);
         System.out.printf("result: d%", result);
@@ -372,5 +485,40 @@ public class Flip {
     }
 }
 \end{lstlisting}
+\caption{Java API usage example}
+\label{fig:java}
+\end{figure}
 
-For other languages, the APIs are similar.
+Similarly, a Java version for the flip example can be seen in Figure ~\ref{fig:java}.\\
+
+\subsection{Ocaml API}
+If we want to use the model in Ocaml, we can use the API as showed in Figure ~\ref{fig:ocaml}. \\
+
+\begin{figure}
+  \begin{lstlisting}[language=Caml]
+    open libppp
+
+    let flip_eg =
+      let state = Libppp.pp_new_state() in
+
+      Libppp.pp_load_file(state, "../parse/models/flip.model")
+
+      let instance = Libppp.pp_new_instance(state, "flip_example", None) in
+
+      let query = Libppp.pp_compile_query(instance, "x>2, x<3") in
+
+      let traces = Libppp.pp_sample(instance, query) in
+
+      let query = Libppp.pp_compile_query(instance, "flip==1") in
+
+      let (success, result) = Libppp.pp_get_result(traces, query) in
+
+      let (success, result) = Libppp.pp_infer(instance, "flip == 1", "x > 2, x < 3") in
+
+      Libppp.pp_free(state);
+  \end{lstlisting}
+  \caption{Ocaml API usage example}
+  \label{fig:ocaml}
+\end{figure}
+
+For other languages, the APIs are similar. The interface file is just used to encode the public APIs of the framework and it is only used once to generate the wrapper of APIs in other languages. So users do not need to write the interface file on their own. They can directly write the queries in domain languages and load models in model files.
