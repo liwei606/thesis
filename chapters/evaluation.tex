@@ -1,10 +1,10 @@
-\chapter{Implementation and Evaluation}
+\chapter{Implementation}
 \label{chap:eval}
 \section{Imlementation}
-The portable probabilistic programming framework is implemented in C and included four parts: parse, infer, query and API implementations.
+The portable probabilistic programming framework is implemented in C and is consisted of four parts: parser, inference engine, query analyzer, and API implementations.
 
 \subsection{Parser}
-We implemented the parser based on the grammar in Chapter ~\ref{chap:approach} Section ~\ref{sec:syntax}. Since the language is used to describe Bayesian networks, we didn't generate abstract syntax tree. Instead, we generate the graph to describe the probabilistic graphical model with the following data structure:
+We implemented the parser based on the grammar in Chapter ~\ref{chap:approach}, Section ~\ref{sec:syntax}. Since the language is used to describe Bayesian networks, we didn't generate abstract syntax tree. Instead, we generate the graph to describe the probabilistic graphical model with the following data structure:
 \begin{lstlisting}[language=C]
   struct BNVertex {
     int type;      // draw or compute
@@ -58,57 +58,10 @@ We implemented the parser based on the grammar in Chapter ~\ref{chap:approach} S
 \end{lstlisting}
 The generated network is (1) constructed, (2) topological sorted, and (3) stored in an array struct \texttt{BNVertex* vertices[]}. The inference engine can traverse this array from the start to the end, and access sample values stored in the vertices. Because the network is already topological sorted, it is guaranteed that inference engine always reads the correct sample values.
 
-Users can declare many probabilistic graphical models in our declarative programming language. Figure ~\ref{fig:hmm} shows an example of Hidden Markov Model(HMM) described in our language and Figure ~\ref{fig:ldacode} shows an example of Latent Dirichlet Allocation(LDA).
-
-\begin{figure}
-  \begin{lstlisting}[language=C]
-    model hidden_markov_model(n, a, b) {
-        // n -- chain length
-        // a -- number of possible states
-        // b -- number of possible observations
-        public states[n]   // hidden states
-        public observ[n]   // observations
-        public trans[a,a]  // transition matrix of size a*a
-        public emiss[a,b]  // emission matrix of size a*b
-        public start[a]    // start probabilities of size a
-
-        states[0] ~ dcat(start)
-        for i = 1 to n-1 {
-            states[i] ~ dcat(trans[states[i-1]])
-        }
-
-        for i = 0 to n-1 {
-            observ[i] ~ dcat(emiss[states[i]])
-        }
-    }
-  \end{lstlisting}
-  \caption{An HMM example}
-  \label{fig:hmm}
-\end{figure}
-
-\begin{figure}
-  \begin{lstlisting}[language=C]
-    model latent_dirichlet_allocation(k, num_docs, num_words[], vocab_size) {
-      for i = 1 to k {
-        topics(i, :) = dirichlet(1, vocab_size);
-      }
-      
-      for i = 1 to num_docs {
-        topic_dist = dirichlet(1, k);
-        for j = 1 to num_words(i) {
-          topic = multinomial(topic_dist);
-          X{i}(j) = multinomial(topics(topic, :));
-        }
-      }
-    }
-  \end{lstlisting}
-  \caption{An LDA example}
-  \label{fig:lda}
-\end{figure}
 \subsection{Probabilistic Distributions}
 The implementations of the probabilistic distributions are generally based on rejection sampling. We leveraged the algorithms in probability theory to generate variables from a specified distribution.
 
-Figure ~\ref{fig:gaussian} is an example to show how we derive the samples of Gaussian distribution from randomC distribution which generate random values in $[0, 1]$:
+Figure ~\ref{fig:gaussian} is an example to show how we derive the samples of Gaussian distribution from \texttt{randomC} distribution which generate random values in $[0, 1]$:
 
 \begin{figure}
 \begin{lstlisting}[language=C]
@@ -145,19 +98,27 @@ Figure ~\ref{fig:gaussian} is an example to show how we derive the samples of Ga
     \label{fig:trace2}
 \end{figure}
 
-In the implementation of the MH alorithm in our inference engine, we leverage the approach proposed by ~\cite{lightweight}, which memorized trace information and update trace iteratively as illustrated in Figure ~\ref{fig:trace1} and Figure ~\ref{fig:trace2}. 
+In the implementation of the MH alorithm in our inference engine, we leverage the approach proposed by ~\cite{lightweight}, which memorized trace information and update trace iteratively. More specifically, Let a database $\mathbb{D}$ be defined as a mapping $ \mathbb{N} \rightarrow \mathscr{T} \times X \times \mathbb{L} \times \theta$, where $\mathbb{N}$ is the name of a random choice, $\mathscr{T}$ is its elementary random primitives(ERP) type, which represents a sample function of distributions like \texttt{rand(), gaussian()}, $X$ is its value, $\theta$ are ERP parameters, and $\mathbb{L}$ is this random value's likelihood. Missing entries are allowed here.
 
-There are some other methods to implement an inference engine such as \cite{nonstandard}, which showed how \textit{nonstandard interpretations} of probabilistic programs can be used to perform efficient inference algorithms. In their method, infromation about the structure of the distributions (which is the dependencies or gradients in the probabilistic graphical models) is derived as monad-like side computation as the same time of executing the program. Meanwhile, the interpreations can be coded easily with some special-purpose objects and operator overloading. They promoted the inference efficiency perfomance by using the structure information of distribution as part of the variety of infreence algorithms.
+We can control the execution of a function $f'$ by controlling the values in $\mathbb{D}$. When $f'$ encounters an $f_k'$ , it computes its name $n \in \mathbb{N}$, its parameters $\theta_c$ (where $c$ is a mnemonic for ``current"), and its current type $t_c \in \mathscr{T}$. It then looks up $(t,x,l,\theta_{db}) = \mathbb{D}(n)$. If a value is found and the types match, we set the return value of $f_k$ to be $x$. Otherwise, the value is sampled from the appropriate ERP $x \sim p_{t_c}(\cdot|\theta_c)$, its likelihood is computed, and the corresponding entry in the database is updated. This is formalized in the \texttt{trace\_update} procedure, defined in Figure ~\ref{fig:trace2}.
 
-Additionally, because of the program is in a machine-readable form, various of techniques from compiler design and program analysis can be used in the inference engine. ~\cite{gordon2013} designed a new model-learner pattern for Bayesian reasoning. In their work, a new probabilistic programming abstraction was proposed, a typed Bayesian model, based on a pair of probabilistic expressions for the prior and sampling distributions. Also, ~\cite{dataflow} presented a new algorithm for Bayesian inference over probabilistic programs, whihc is based on data flow analysis techniques from the program analysis community.
+We use \texttt{trace\_update} to define our overall MCMC algorithm, shown in Figure ~\ref{fig:trace1}. Given a current trace $x$ and score $p(x)$, we proceed by reconsidering one random choice $x_k$. We equip each ERP type with a proposal kernel $\mathscr{K}_t(x'|x,\theta)$, which we use to generate proposals to $x_k$. After a proposal, we call \texttt{trace\_update} to generate a new trace $x'$, and compute its likelihood $p(x')$, which is the product of any reused random choices, and any new randomness that was sampled. This gives us an overall score, which is used as an MH accept ratio
+\begin{align*}
+  \alpha = min \{1, \frac{p(x')\mathscr{K}_t(x|x′,\theta)}{p(x)\mathscr{K}_t(x'|x,\theta)} \}
+\end{align*}
+
+There are some other methods to implement an inference engine such as the \textit{nonstandart interpretations} proposed by \cite{nonstandard}, which showed how \textit{nonstandard interpretations} of probabilistic programs can be used to perform efficient inference algorithms. In their method, infromation about the structure of the distributions (which is the dependencies or gradients in the probabilistic graphical models) is derived as monad-like side computation as the same time of executing the program. Meanwhile, the interpretations can be coded easily with some special-purpose objects and operator overloading. They promoted the inference efficiency perfomance by using the structure information of distribution as part of the variety of inference algorithms.
+
+Additionally, because of the program is in a machine-readable form, various of techniques from compiler design and program analysis can be used in the inference engine. ~\cite{gordon2013} designed a new model-learner pattern for Bayesian reasoning. In their work, a new probabilistic programming abstraction was proposed, a typed Bayesian model, based on a pair of probabilistic expressions for the prior and sampling distributions. Also, ~\cite{dataflow} presented a new algorithm for Bayesian inference over probabilistic programs, which is based on data flow analysis techniques from the program analysis community. These can be improvements to our framework in the future development.
 
 \subsection{API}
 To enable the APIs for other programming languages, we first compiled the inferface file as showed in Section ~\ref{sec:api} and generated the wrapper code that other languages need to access the underlying C/C++ code. Then the users will have access to the APIs of the portable probabilistic programming language framework in their domain language. 
 
-\section{Experiments}
+\section{Case Study}
+Following the example we have illustrated above: flip example, which is showed in Figure ~\ref{fig:flip_eg}, we studied the accuracy and time cost according to the different assignments of number of samples. The result is showed in Figure ~\ref{fig:flip_eval1} and Figure  ~\ref{fig:flip_eval2}. 
 \begin{figure}
     \centering
-    \includegraphics[width=0.7\textwidth]{figures/flip_eval1.png}
+    \includegraphics[width=0.7\textwidth]{figures/flip_eval.png}
     \caption{Table of flip example}
     \label{fig:flip_eval1}
 \end{figure}
@@ -165,8 +126,6 @@ To enable the APIs for other programming languages, we first compiled the inferf
 \begin{figure}
     \centering
     \includegraphics[width=0.7\textwidth]{figures/flip_eval2.png}
-    \caption{Evaluation of accuracy and time according to the number of samples.}
+    \caption{Flip example: accuracy and time according to the number of samples.}
     \label{fig:flip_eval2}
 \end{figure}
-We have evaluated several examples in the framework. 
-For the flip example as is showed in ~\ref{fig:flip_eg}, the benchmark is showed in Figure ~\ref{fig:flip_eval1} and Figure ~\ref{fig:flip_eval2}.

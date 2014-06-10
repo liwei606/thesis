@@ -1,14 +1,27 @@
 \chapter{Approach}
 \label{chap:approach}
-There are four steps in the design and implementation of the portable probabilistic programming framework. At first we designed the syntax of the embedded programming language, which targets the description of the Bayesian networks and conditional query.  The design of the language is based on BUGS, but the syntax is more specific and efficient to be lightweight for the portable characteristic. Also the syntax can be expressive for most of the probabilistic models. The description of the models using the portable probabilistic programming language is separated from the code of the host language as well of the conditional query, which can enhance the reusability of the probabilistic models. The parser is implemented and the inference engine is generated automatically based on the conditional query. More details will be illustrated in section ~\ref{sec:syntax}. 
 
-We implemented the probabilistic library for most of the probabilistic distribution such as Gaussian, Gama, Beta, etc. Our probabilistic programs define distributions by defining a distribution over possible execution traces. The distribution is fully specified by a generative procedure. More details can be found in section ~\ref{sec:distr}. 
+\section{Overview}
+\label{sec:overview}
 
-The inference algorithm is based on the MCMC sampling, including rejection sampling and Metropolis-Hastings Algorithm, which is efficient and lightweight to implement. We will elaborate more on the mechanism of the inference engine through an example in section ~\ref{sec:infer}. 
+\begin{figure}
+    \centering
+    \rotatebox{0}{\includegraphics[width=0.5\textwidth]{figures/overview.png}}
+    \caption{Overview of the Portable Probabilistic Programming Framework.}
+    \label{fig:overview}
+\end{figure}
 
-Additionally, we implement the APIs for other languages leveraging some existing development tool such as SWIG (Simplified Wrapper and Interface Generator). More details for the APIs are in section ~\ref{sec:api}.
+The structure of the framework is showed in Figure ~\ref{fig:overview}. Users can define probabilistic models in our model declaring language, where they can directly call the functions of distributions without implementing the distributions. They can load the models and write queries in their domain languages with the APIs. Then the inference engine will infer the queries automatically based on the sampling traces. Thus the desired probability will be derived.
 
-Our main contribution lies in the design of the portable probabilistic programming language to make it portable, the implementation of the probabilistic library and the lightweight implementation of the inference engine.
+There are four steps in the design and implementation of the portable probabilistic programming framework. At first we designed the syntax of the embedded programming language, which targets the description of the Bayesian networks. The design of the language is based on BUGS, but the syntax is more specific and efficient to be lightweight for the portable characteristic. Also the syntax can be expressive for most of the probabilistic models. The description of the models using the portable probabilistic programming language is separated from the code of the host language as well of the conditional query, which can enhance the reusability of the probabilistic models. The parser is implemented and the inference engine is generated automatically based on the conditional query. More details will be illustrated in Section ~\ref{sec:syntax}. 
+
+We implemented the probabilistic library for most of the probability distribution such as Gaussian, Gama, Beta, etc. Our probabilistic programs define distributions by defining a distribution over possible execution traces. The distribution is fully specified by a generative procedure. More details can be found in Section ~\ref{sec:distr}. 
+
+The inference algorithm is based on the MCMC sampling, including rejection sampling and Metropolis-Hastings Algorithm, which is efficient and lightweight to implement. We will elaborate more on the mechanism of the inference engine in Section ~\ref{sec:infer}. 
+
+Additionally, we implement the APIs for other languages leveraging the existing development tool: SWIG (Simplified Wrapper and Interface Generator). More details for the APIs are in Section ~\ref{sec:api}.
+
+Our main contribution lies in the design of the portable probabilistic programming language to make it portable, the implementation of the probability distribution library and the lightweight implementation of the inference engine.
 
 
 \section{Syntax of Programming Language}
@@ -22,7 +35,7 @@ We will give some intuition of our portable probabilistic programming language b
     \label{fig:flip_eg}
 \end{figure}
 
-The flip\_example describes a probabilistic model that has the distribution over variables as showed in Figure ~\ref{fig:flip_dist}. The grammar for this specific example is showed in Figure ~\ref{fig:flip_syn}. Under this syntax, the parser will parse the probabilistic program and generate the Bayesian network as the user described. The inference is done based on the probabilistic graph. The Bayesian network of the flip example is showed in Figure ~\ref{fig:flip_net}.
+The flip example describes a probabilistic model that has the distribution over variables as showed in Figure ~\ref{fig:flip_dist}. The grammar for this specific example is showed in Figure ~\ref{fig:flip_syn}. Under this syntax, the parser will parse the probabilistic program and generate the Bayesian network as the user described. The inference is done based on the probabilistic graph. The Bayesian network of the flip example is showed in Figure ~\ref{fig:flip_net}.
 
 
 \begin{figure}
@@ -66,15 +79,15 @@ The grammar for the portable probabilistic programming language is as below:
                    |& ~\textcolor{red}{``for"} ~name ~\textcolor{red}{``="} ~expr ~\textcolor{red}{``to"} ~expr ~\textcolor{red}{``\{"} stmts \textcolor{red}{``\}"} \\        
          expr\_seq \rightarrow & ~expr \\
                    |& ~expr ~\textcolor{red}{``,"} ~expr\_seq \\      
+\end{align*}
+
+\begin{align*}   
              expr \rightarrow & ~\textcolor{red}{``if"} ~expr ~\textcolor{red}{``then"} ~expr ~\textcolor{red}{``else"} ~expr \\
                    |& ~\textcolor{red}{``new"} ~name ~\textcolor{red}{``("} ~\textcolor{red}{``)"} \\
                    |& ~add\_expr \\  
          add\_expr \rightarrow & ~term \\
                    |& ~term ~\textcolor{red}{``+"} ~add\_expr \\
-                   |& ~term ~\textcolor{red}{``-"} ~add\_expr     
-\end{align*}
-
-\begin{align*}             
+                   |& ~term ~\textcolor{red}{``-"} ~add\_expr            
              term \rightarrow & ~primary \\  
                    |& ~primary \textcolor{red}{``*"} ~term \\
                    |& ~primary \textcolor{red}{``/"} ~term \\
@@ -94,37 +107,60 @@ The grammar for the portable probabilistic programming language is as below:
     integer\_value \rightarrow & ~[0-9]+ \\            
              name \rightarrow & ~[a-zA-Z\_][0-9a-zA-Z\_]*
 \end{align*}
-The example of declaring an Hidden Markov Model(HMM) with our portable probabilistic programming language is as below:
 
-\noindent\begin{minipage}{\textwidth}
-\begin{lstlisting}[language=C]
-  model hidden_markov_model(n, a, b) {
-      // n -- chain length
-      // a -- number of possible states
-      // b -- number of possible observations
-      public states[n]   // hidden states
-      public observ[n]   // observations
-      public trans[a,a]  // transition matrix of size a*a
-      public emiss[a,b]  // emission matrix of size a*b
-      public start[a]    // start probabilities of size a
- 
-      states[0] ~ dcat(start)
-      for i = 1 to n-1 {
-          states[i] ~ dcat(trans[states[i-1]])
-      }
- 
-      for i = 0 to n-1 {
-          observ[i] ~ dcat(emiss[states[i]])
-      }
-  }
-\end{lstlisting}
-\end{minipage}
+Users can declare many probabilistic graphical models in our declarative programming language. Figure ~\ref{fig:hmm} shows an example of Hidden Markov Model(HMM) described in our language and Figure ~\ref{fig:ldacode} shows an example of Latent Dirichlet Allocation(LDA).
 
-In our design, the declarations of the Bayesian networks and the query of conditional probabilisty is seperated. Users can describe the model in a model file and load the model in their domain languages. In this way, users can reuse their models and load several probabilistic graphical models at the same time. Also their queries can based on these models which have a better struture than mixed the models up. Examples of writing the queries and load models can be found in ~\ref{sec:api}.
+\begin{figure}
+  \begin{lstlisting}[language=C]
+    model hidden_markov_model(n, a, b) {
+        // n -- chain length
+        // a -- number of possible states
+        // b -- number of possible observations
+        public states[n]   // hidden states
+        public observ[n]   // observations
+        public trans[a,a]  // transition matrix of size a*a
+        public emiss[a,b]  // emission matrix of size a*b
+        public start[a]    // start probabilities of size a
+
+        states[0] ~ dcat(start)
+        for i = 1 to n-1 {
+            states[i] ~ dcat(trans[states[i-1]])
+        }
+
+        for i = 0 to n-1 {
+            observ[i] ~ dcat(emiss[states[i]])
+        }
+    }
+  \end{lstlisting}
+  \caption{An HMM example}
+  \label{fig:hmm}
+\end{figure}
+
+\begin{figure}
+  \begin{lstlisting}[language=C]
+    model latent_dirichlet_allocation(k, num_docs, num_words[], vocab_size) {
+      for i = 1 to k {
+        topics(i, :) = dirichlet(1, vocab_size);
+      }
+      
+      for i = 1 to num_docs {
+        topic_dist = dirichlet(1, k);
+        for j = 1 to num_words(i) {
+          topic = multinomial(topic_dist);
+          X{i}(j) = multinomial(topics(topic, :));
+        }
+      }
+    }
+  \end{lstlisting}
+  \caption{An LDA example}
+  \label{fig:ldacode}
+\end{figure}
+
+In our design, the declarations of the Bayesian networks and the query of conditional probability is seperated. Users can describe the model in a model file and load the model in their domain languages. In this way, users can reuse their models and load several probabilistic graphical models at the same time. Also their queries can base on these models which have a better structure than mixing the models up. Examples of writing the queries and load models can be found in ~\ref{sec:api}.
 
 \section{Probabilistic Distribution Library}
 \label{sec:distr}
-We implemented the probabilistic library for most of the probabilistic distribution such as Gaussian, Gama, Beta, etc. Our probabilistic programs define distributions by defining a distribution over possible execution traces. The distribution is fully specified by a generative procedure. Some complex distributions are crafted compositionally. An example is showed on how to implement a Gaussian Mixture Model distribution in Figure ~\ref{fig:gmm}. As can be seen in Figure ~\ref{fig:gmm}., everytime we run the function gmm(), it will return a value based on the distribution implementation. And the trace of the returned value will meet the requirements of the density probability the program has defined.
+We implemented the probabilistic library for most of the probability distribution such as Gaussian, Gama, Beta, etc. Our probabilistic programs define distributions by defining a distribution over possible execution traces. The distribution is fully specified by a generative procedure. Some complex distributions are crafted compositionally. An example is showed on how to implement a Gaussian Mixture Model distribution in Figure ~\ref{fig:gmm}. As can be seen in Figure ~\ref{fig:gmm}., everytime we run the function $gmm()$, it will return a value based on the distribution implementation. And the trace of the returned value will meet the requirements of the density probability the program has defined.
 
 \begin{figure}
     \centering
@@ -133,7 +169,7 @@ We implemented the probabilistic library for most of the probabilistic distribut
     \label{fig:gmm}
 \end{figure}
 
-Most of the distributions in our library are implemented based on Normal distribution and Bernoulli distribution according to the mathematical methods. The probabilistic distributions in our framework contain:
+Most of the distributions in our library are implemented based on Normal distribution and Bernoulli distribution according to mathematical algorithms. The probability distributions in our framework contain:
 
 \begin{center}
 \begin{tabular}{|l|l|}
@@ -155,7 +191,7 @@ Most of the distributions in our library are implemented based on Normal distrib
 \end{tabular}
 \end{center}
 
-There are many algorithms to generate values from some specific probabilistic distribution. For example, to generate values from Gaussian distribution, there is Box-Muller transform method ~\cite{box} and Ziggurat algorithm ~\cite{ziggurat}. We leveraged Ziggurat algorithm in our framework since it is faster and still exact. 
+There are many algorithms to generate values from some specific probability distribution. For example, to generate values from Gaussian distribution, there is Box-Muller transform method ~\cite{box} and Ziggurat algorithm ~\cite{ziggurat}. We leveraged Ziggurat algorithm in our framework since it is faster and still exact. 
 
 \begin{figure}
     \centering
@@ -170,24 +206,38 @@ As is showed in Figure ~\ref{fig:ziggurat}, each rectangular is a layer. Given u
   \item Let $x = U_0 \times x_i$
   \item If $x < x_i + 1$, return $x$.
   \item If $i == 0$, generate a point from the tail using the fallback algorithm.
-  \item Let $y = y_i + U_1 \times (y_i + 1 − y_i)$.
+  \item Let $y = y_i + U_1 \times (y_i + 1 - y_i)$.
   \item Compute $f(x)$. If $y < f(x)$, return $x$.
   \item Otherwise, choose new random numbers and go back to step 1.
 \end{enumerate}
 
 \section{Inference Engine}
 \label{sec:infer}
-Calculating the distribution specified by a probabilistic program is called probabilistic inference. The inferred probability distribution is called the \textit{posterior probability distribution}, and the initial guess made by the program is called the \textit{prior probability distribution}. There are a number of methods for performing inference. The most common exact inference methods are: variable elimination, which eliminates (by integration or summation) the non-observed non-query variables one by one by distributing the sum over the product; clique tree propagation, which caches the computation so that many variables can be queried at one time and new evidence can be propagated quickly; and recursive conditioning and AND/OR search, which allow for a space-time tradeoff and match the efficiency of variable elimination when enough space is used. All of these methods have complexity that is exponential in the network's treewidth. The most common approximate inference algorithms are importance sampling, stochastic MCMC simulation ~\cite{mcmc}, mini-bucket elimination, loopy belief propagation, generalized belief propagation, and variational methods.
+Calculating the distribution specified by a probabilistic program is called \textit{probabilistic inference}. The inferred probability distribution is called the \textit{posterior probability distribution}, and the initial guess made by the program is called the \textit{prior probability distribution}. Let $(E; F)$ be a partitioning of the node indices of a graphical model into disjoint subsets, such that $(X_E, X_F)$ is a partitioning of the random variables. There are two kinds of inference problems that we want to solve:
+\begin{itemize}
+  \item Marginal probabilities:
+  \begin{align*}
+    p(x_E) = \sum_{x_F} p(x_E, x_F).
+  \end{align*}
+  \item Maximum a posteriori(MAP) probabilities:
+  \begin{align*}
+    p^*(x_E) = max_{x_F} ~p(x_E, x_F).
+  \end{align*}
+\end{itemize}
+From these basic computations we can obtain other quantities of interest. In particular, the \textit{conditional probability} $p(x_E | x_F)$ is equal to
+\begin{align*}
+  p(x_E | x_F) = \frac{p(x_E, x_F)}{\sum_{x_E} p(x_E, x_F)}.
+\end{align*}
 
 The mechanism of our inference engine is based on sampling. Currently we used Rejection Sampling algorithm in the inference engine, which is straightforward and easy to implement. However, rejection Sampling is not as efficient as other sampling algorithms like Gibbs Sampling and Metropolis-Hastings algorithm. Henceforth, we added another optional inference algorithm in our inference engine: Metropolis-Hastings algorithm. 
 
-There are tree problems we need to consider in stochastic sampling:
+There are three problems we need to consider in stochastic sampling:
 \begin{itemize}
   \item how to generate samples
   \item how to incorporate observations
   \item how to infer probabilities from samples
 \end{itemize}
-The intuitive idea is to sample the traces as the program runs. If the trace meets the Boolean requirements of the condition, then record the trace, or the trace is discarded. Then we calculate the number of the traces that can meet the Boolean requirement of the probability we want to get. Then calculating this number over the whole number of traces we recorded can derive the final conditional probability.
+The intuitive idea is to sample the traces as the program runs. If the trace meets the Boolean requirements of the condition, then record the trace, otherwise the trace is discarded. Then we calculate the number of the traces that can meet the Boolean requirement of the probability we want to get. Then calculating this number over the whole number of traces we recorded can derive the final conditional probability.
 
 \subsection{Rejection Sampling}
 \textit{Rejection sampling} is a basic technique used to generate observations from a distribution. It is a type of Monte Carlo method. The method works for any distribution in $\mathbb{R}^m$ with a density.
@@ -195,7 +245,7 @@ The intuitive idea is to sample the traces as the program runs. If the trace mee
 \begin{figure}
     \centering
     \includegraphics[width=0.9\textwidth]{figures/rj1.png}
-    \caption{Rejection sampling algorithm. Here, $u \sim Uiform(0,1)$ denotes the operation of sampling a uniform random variable on the interval $(0,1)$.}
+    \caption{Rejection sampling algorithm. Here, $u \sim \mathscr{U}(0,1)$ denotes the operation of sampling a uniform random variable on the interval $(0,1)$.}
     \label{fig:rj1}
 \end{figure}
 
@@ -208,13 +258,12 @@ The intuitive idea is to sample the traces as the program runs. If the trace mee
 
 Rejection sampling is based on the observation that to sample a random variable one can sample uniformly from the region under the graph of its density function. We can sample from a distribution $p(x)$, which is known up to a proportionality constant, by sampling from another easy-to-sample proposal distribution $q(x)$ that satisﬁes $p(x) \leq Mq(x), M < \infty$, using the accept/reject procedure describe in Figure ~\ref{fig:rj1} (see also Figure ~\ref{fig:rj2}). ~\cite{mcmc}
 The accepted $x(i)$ can be easily shown to be sampled with probability $p(x)$ ~\cite{robert}. This simple method suffers from severe limitations. It is not always
-possible to bound $p(x) \/ q(x)$ with a reasonable constant M over the whole space $X$. If $M$ is too large, the acceptance probability 
+possible to bound $p(x) \/ q(x)$ with a reasonable constant $M$ over the whole space $X$. If $M$ is too large, the acceptance probability 
 \begin{align*}
   Pr(x ~ accepted) = Pr(u < \frac{p(x)}{Mq(x)}) = \frac{1}{M}
 \end{align*}
 will be too small. This makes the method impractical in high-dimensional scenarios.
 
-Continue with our previous e
 \subsection{Metropolis-Hastings Algorithm}
 
 \begin{figure}
@@ -233,7 +282,7 @@ Continue with our previous e
 
 The \textit{Metropolis-Hastings (MH) algorithm} is the most popular MCMC method. An MH step of invariant distribution $p(x)$ and proposal distribution $q(x^*	| x)$ involves sampling a candidate value $x^*$ given the current value $x$ according to $q(x^* | x)$. The Markov chain then moves towards $x^*$ with acceptance probability
 \begin{align*}
-  A(x, x^*) = min\{1,[p(x)q(x^* | x)]^{−1} p(x^*)q(x | x^*)\}
+  \mathscr{A}(x, x^*) = min\{1,\frac{p(x^*)q(x | x^*)}{p(x)q(x^* | x)} \}
 \end{align*}
 otherwise it remains at $x$. The pseudo-code is shown in Figure ~\ref{fig:mh}, while Figure ~\ref{fig:mh2} shows the results of running the MH algorithm with a Gaussian proposal distribution
 \begin{align*}
@@ -245,23 +294,24 @@ and a bimodal target distribution
 \end{align*}
 for 5000 iterations. As expected, the histogram of the samples approximates the target distribution.
 
-The MH algorithm is very simple, but it requires careful design of the proposal distribution $q(x^* | x)$. In subsequent sections, we will see that many MCMC algorithms arise by considering specific choices of this distribution. In general, it is possible to use suboptimal inference and learning algorithms to generate data-driven proposal distributions.
+The MH algorithm is very simple, but it requires careful design of the proposal distribution $q(x^* | x)$. In general, it is possible to use suboptimal inference and learning algorithms to generate data-driven proposal distributions.
+
 The transition kernel for the MH algorithm is
 \begin{align*}
   K_{MH}(x^{(i + 1)} | x^{(i)}) = q(x^{(i + 1)} | x^{(i)}) \mathscr{A}(x^{(i)}, x^{(i + 1)}) + \sigma_{x^{(i)}} (x^{(i + 1)}) r (x^{(i)}),
 \end{align*}  
-where $r(x(i))$ is the term associated with rejection
+where $r(x^{(i)})$ is the term associated with rejection
 \begin{align*}
-  r(x^{(i)} = \int_{\chi} q(x^* | x^{(i)})(1 - \mathscr{A}(x^{(i)}), x^*))dx^*
+  r(x^{(i)}) = \int_{\chi} q(x^* | x^{(i)})(1 - \mathscr{A}(x^{(i)}), x^*)dx^*
 \end{align*}
 It is fairly easy to prove that the samples generated by MH algorithm will mimic samples
-drawn from the target distribution asymptotically. By construction, $K_{MH}$ satisﬁes the detailed
+drawn from the target distribution asymptotically. By construction, $K_{MH}$ satisfies the detailed
 balance condition
 \begin{align*}
   p(x^{(i)})K_{MH}(x^{(i + 1)} | x^{(i)}) = p(x^{(i + 1)})K_{MH}(x^{(i)} | x^{(i + 1)})
 \end{align*}
 and, consequently, the MH algorithm admits $p(x)$ as invariant distribution. To show that the MH algorithm converges, we need to ensure that there are no cycles (aperiodicity)
-and that every state that has positive probability can be reached in a ﬁnite number of steps (irreducibility). Since the algorithm always allows for rejection, it follows that it is aperiodic. To ensure irreducibility, we simply need to make sure that the support of $q(\cdotp)$ includes the support of $p(\cdotp)$.
+and that every state that has positive probability can be reached in a finite number of steps (irreducibility). Since the algorithm always allows for rejection, it follows that it is aperiodic. To ensure irreducibility, we simply need to make sure that the support of $q(\cdotp)$ includes the support of $p(\cdotp)$.
 
 The independent sampler and the Metropolis algorithm are two simple instances of the MH algorithm. In the independent sampler the proposal is independent of the current state, $q(x^* | x^{(i)}) = q(x^*)$. Hence, the acceptance probability is
 \begin{align*}
@@ -283,7 +333,7 @@ we will get traces of samples where the samples all meet the condition $Y < 2$. 
 
 \section{APIs for Other Languages}
 \label{sec:api}
-We leverage the development tool SWIG (Simplified Wrapper and Interface Generator) ~\cite{swig} to make other languages be able to call for C functions, as we implemented in C. SWIG is an interface compiler that connects programs written in C and C++ with scripting languages such as Perl, Python, Ruby, and Tcl. It works by taking the declarations found in C/C++ header files and using them to generate the wrapper code that scripting languages need to access the underlying C/C++ code. Once the user has the APIs, users are able to call the load probabilistic model function and inference function in each common language. That's how the portable is implemented. 
+We leveraged the development tool SWIG (Simplified Wrapper and Interface Generator) ~\cite{swig} to make other languages be able to call for C functions, as we implemented the framework in C. SWIG is an interface compiler that connects programs written in C and C++ with scripting languages such as Perl, Python, Ruby, and Tcl. It works by taking the declarations found in C/C++ header files and using them to generate the wrapper code that scripting languages need to access the underlying C/C++ code. Once the user has the APIs, users are able to call the load probabilistic model function and inference function in each common language. That's how the portable is implemented. 
 
 The supported languages is listed as below:
 
@@ -454,7 +504,6 @@ libppp.pp_free(state);
 \begin{figure}
 \begin{lstlisting}[language=Java]
 public class Flip {
-
     public static void main(String[] args) {
         System.setProperty("java.library.path", ".");
         System.loadLibrary("libppp");
